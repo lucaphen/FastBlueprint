@@ -6,7 +6,7 @@
 """
 # dependencies
 from fastapi import APIRouter, Request, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from app.api.schema.response import ResponseModel, ErrorResponseModel
 from app.api.schema.contracts import Contract
@@ -23,7 +23,7 @@ from app.services.oauth2 import (
 )
 from typing import List
 from app.models.authentication import User, OAuth2Token, OAuthClient, RefreshToken
-from app.api.schema import UserBase, UserCreate, UserResponse
+from app.api.schema import UserBase, UserCreate, UserResponse, Token
 
 # development dependencies
 from datetime import date, timedelta
@@ -31,29 +31,7 @@ from datetime import date, timedelta
 # Router initialization
 router = APIRouter()
 
-@router.post("/register", response_model=UserResponse)
-@limiter.limit(RATE_LIMIT)
-def register_user(
-    request: Request,
-    user: UserCreate, 
-    db: Session = Depends(get_db)
-):
-    # Check if user already exists
-    db_user = db.query(User).filter(User.username == user.username).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
-    
-    # create user
-    hashed_password = Hash.bcrypt(user.password)
-    new_user = User(username=user.username, hashed_password=hashed_password)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
-
-
-
-@router.post("/token")
+@router.post("/token", response_model=ResponseModel)
 @limiter.limit(RATE_LIMIT)
 async def generate_token(
     request: Request,
@@ -74,9 +52,36 @@ async def generate_token(
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return ResponseModel(
+        success=True, 
+        message="token generation successful",
+        data=Token(
+            access_token=access_token, 
+            token_type="Bearer"
+        )
+    )
 
 
+
+@router.post("/register", response_model=UserResponse)
+@limiter.limit(RATE_LIMIT)
+def register_user(
+    request: Request,
+    user: UserCreate, 
+    db: Session = Depends(get_db)
+):
+    # Check if user already exists
+    db_user = db.query(User).filter(User.username == user.username).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    
+    # create user
+    hashed_password = Hash.bcrypt(user.password)
+    new_user = User(username=user.username, hashed_password=hashed_password, is_admin=user.is_admin)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
 @router.get("/users", response_model=List[UserResponse])
 @limiter.limit(RATE_LIMIT)
@@ -85,6 +90,10 @@ def get_users(
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):  
+    # check active status
+    if not current_user.is_active: 
+        raise HTTPException(status_code=403, detail="User access disabled")
+
     # check admin access
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not enough permissions")

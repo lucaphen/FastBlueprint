@@ -6,13 +6,11 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    is_admin: Optional[bool] = False
 
 class UserResponse(UserBase):
     id: int
     is_admin: Optional[bool] = False
-
-    class Config:
-        orm_mode = True
 
 class Token(BaseModel):
     access_token: str

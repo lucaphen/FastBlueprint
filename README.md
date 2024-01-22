@@ -11,4 +11,5 @@ A template for a FastAPI microservice to jump directly into coding
 
 # TODOS: 
 - Fix authentication system 
+    - token after logging in with openapi docs is returning undefined
 - Check sqlalchemy database is working
